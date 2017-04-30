@@ -1,0 +1,20 @@
+{
+  "name": "mfp-stats",
+  "version": "0.0.1",
+  "description": "A simple tool to scrape MyFitnessPal and crunch some numbers",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "author": "Brendan Warkentin <faazshift@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^0.22.0",
+    "express": "^4.15.2",
+    "lodash.get": "^4.4.2",
+    "moment": "^2.18.1",
+    "request": "^2.81.0",
+    "request-promise-native": "^1.0.3"
+  }
+}

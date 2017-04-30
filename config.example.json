@@ -1,0 +1,10 @@
+{
+    "auth": {
+        "username": "",
+        "password": ""
+    },
+    "express": {
+        "port": 5678
+    },
+    "mode": "cli"
+}
