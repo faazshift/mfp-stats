@@ -187,7 +187,7 @@ class MFPStats {
         stats.startWeight = startWeight;
         stats.goalWeight = goalWeight;
         stats.daysSinceStart = moment(latestDate).diff(moment(startDate), 'days');
-        stats.currentWeight = latestWeight;
+        stats.lastWeight = latestWeight;
         stats.lost = parseFloat(startWeight) - parseFloat(latestWeight);
         stats.toLose = parseFloat(latestWeight) - parseFloat(goalWeight);
         stats.lostPercent = Math.round(((stats.lost / (startWeight - goalWeight)) * 100) * 10) / 10;
@@ -196,6 +196,8 @@ class MFPStats {
         stats.goalDate = moment().add(stats.daysLeft, 'days').format();
         stats.displayGoalDate = moment(stats.goalDate).format('dddd, MMMM D, YYYY');
         stats.goalDuration = moment.duration(stats.daysLeft, 'days').humanize();
+        stats.daysSinceLastWeight = moment().diff(moment(latestDate), 'days');
+        stats.estimatedWeight = latestWeight - (stats.dailyAverage * stats.daysSinceLastWeight);
 
         // Waypoints
         stats.waypoints = [];
@@ -218,6 +220,7 @@ class MFPStats {
         // Prettification
         stats.lost = Math.round(stats.lost * 10) / 10;
         stats.toLose = Math.round(stats.toLose * 10) / 10;
+        stats.estimatedWeight = Math.round(stats.estimatedWeight * 10) / 10;
         stats.dailyAverage = Math.round(stats.dailyAverage * 10) / 10;
         stats.daysLeft = Math.round(stats.daysLeft);
 
@@ -230,7 +233,8 @@ class MFPStats {
             MFP username: ${(_get(this.userData, 'item.username'))}
             Starting weight: ${stats.startWeight} lbs
             Starting date: ${stats.displayStartDate} (${stats.daysSinceStart} days ago)
-            Lost so far: ${stats.lost} lbs (currently at ${stats.currentWeight} lbs)
+            Lost so far: ${stats.lost} lbs (most recently at ${stats.lastWeight} lbs)
+            Estimated current weight: ${stats.estimatedWeight} lbs (${stats.daysSinceLastWeight} days since last weigh-in)
             Average daily loss: ${stats.dailyAverage} lbs
             Goal weight: ${stats.goalWeight} lbs
             Progress: ${stats.lostPercent}%
