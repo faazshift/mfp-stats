@@ -4,6 +4,8 @@ let _get = require('lodash.get');
 let moment = require('moment');
 let express = require('express');
 
+let statmath = require('./lib/stat-math');
+
 class MFPStats {
     constructor(config = {}) {
         this.config = Object.assign({
@@ -17,6 +19,8 @@ class MFPStats {
             fetchInterval: 6 * 60 * 60, // 6 hours
             mode: 'cli' // `cli` or `server`
         }, config);
+
+        this.statHelper = new statmath(false);
 
         this.mfpDomain = 'myfitnesspal.com';
         this.mfpURL = `https://www.${this.mfpDomain}`;
@@ -173,6 +177,11 @@ class MFPStats {
 
     buildStats() {
         // Collect info
+        let sex = _get(this.userData, 'item.profiles.0.sex').toLowerCase();
+        let height = _get(this.userData, 'item.profiles.0.height.value'); // For now, we'll assume imperial
+        let birthdate = _get(this.userData, 'item.profiles.0.birthdate');
+        let age = moment().diff(moment(birthdate), 'years');
+
         let startDate = _get(this.userData, 'item.profiles.0.starting_weight_date');
         let startWeight = _get(this.userData, 'item.profiles.0.starting_weight.value'); // Expect lbs for now
         let goalWeight = _get(this.userData, 'item.goal_preferences.weight_goal.value');
@@ -185,6 +194,8 @@ class MFPStats {
         stats.startDate = moment(startDate).format();
         stats.displayStartDate = moment(startDate).format('dddd, MMMM D, YYYY');
         stats.startWeight = startWeight;
+        stats.startBmi = parseFloat(this.statHelper.bmi(height, startWeight).toFixed(1));
+        stats.startBmiClass = this.statHelper.bmi_class(stats.startBmi);
         stats.goalWeight = goalWeight;
         stats.daysSinceStart = moment(latestDate).diff(moment(startDate), 'days');
         stats.lastWeight = latestWeight;
@@ -198,6 +209,12 @@ class MFPStats {
         stats.goalDuration = moment.duration(stats.daysLeft, 'days').humanize();
         stats.daysSinceLastWeight = moment().diff(moment(latestDate), 'days');
         stats.estimatedWeight = latestWeight - (stats.dailyAverage * stats.daysSinceLastWeight);
+        stats.bmr = this.statHelper.bmr_mifflin_st_jeor(sex, latestWeight, height, age);
+        stats.sedentaryKcal = this.statHelper.adjust_bmr(stats.bmr, 1.3);
+        stats.activeKcal = this.statHelper.adjust_bmr(stats.bmr, 1.5);
+        stats.veryActiveKcal = this.statHelper.adjust_bmr(stats.bmr, 1.7);
+        stats.bmi = this.statHelper.bmi(height, latestWeight);
+        stats.bmiClass = this.statHelper.bmi_class(stats.bmi);
 
         // Waypoints
         stats.waypoints = [];
@@ -207,10 +224,14 @@ class MFPStats {
                     let point = {};
                     point.weight = lw;
                     point.toLose = lw - goalWeight;
+                    point.bmi = this.statHelper.bmi(height, lw);
+                    point.bmiClass = this.statHelper.bmi_class(point.bmi);
                     point.daysLeft = Math.round(point.toLose / stats.dailyAverage);
                     point.daysUntil = Math.round(stats.daysLeft - point.daysLeft);
                     point.date = moment().add(point.daysUntil, 'days').format();
                     point.displayDate = moment(point.date).format('dddd, MMMM D, YYYY');
+
+                    point.bmi = point.bmi.toFixed(1);
 
                     stats.waypoints.push(point);
                 }
@@ -223,6 +244,11 @@ class MFPStats {
         stats.estimatedWeight = Math.round(stats.estimatedWeight * 10) / 10;
         stats.dailyAverage = Math.round(stats.dailyAverage * 10) / 10;
         stats.daysLeft = Math.round(stats.daysLeft);
+        stats.bmr = parseFloat(stats.bmr.toFixed(1));
+        stats.sedentaryKcal = parseFloat(stats.sedentaryKcal.toFixed(1));
+        stats.activeKcal = parseFloat(stats.activeKcal.toFixed(1));
+        stats.veryActiveKcal = parseFloat(stats.veryActiveKcal.toFixed(1));
+        stats.bmi = parseFloat(stats.bmi.toFixed(1));
 
         return stats;
     }
@@ -231,10 +257,12 @@ class MFPStats {
         let str = `Weight loss stats
 
             MFP username: ${(_get(this.userData, 'item.username'))}
-            Starting weight: ${stats.startWeight} lbs
+            Starting weight: ${stats.startWeight} lbs (${stats.startBmi} bmi / ${stats.startBmiClass})
             Starting date: ${stats.displayStartDate} (${stats.daysSinceStart} days ago)
-            Lost so far: ${stats.lost} lbs (most recently at ${stats.lastWeight} lbs)
+            Lost so far: ${stats.lost} lbs (most recently at ${stats.lastWeight} lbs) (${stats.bmi} bmi / ${stats.bmiClass})
             Estimated current weight: ${stats.estimatedWeight} lbs (${stats.daysSinceLastWeight} days since last weigh-in)
+            Metabolic rate: ${stats.bmr}
+            Caloric needs for maintenance: sedentary - ${stats.sedentaryKcal}; active - ${stats.activeKcal}; very active - ${stats.veryActiveKcal}
             Average daily loss: ${stats.dailyAverage} lbs
             Goal weight: ${stats.goalWeight} lbs
             Progress: ${stats.lostPercent}%
@@ -243,7 +271,7 @@ class MFPStats {
         let wp = '';
         stats.waypoints.forEach((pt) => {
             wp += `
-                [${pt.weight} lbs] ${pt.displayDate}`;
+                [${pt.weight} lbs] ${pt.displayDate} (${pt.bmi} bmi / ${pt.bmiClass})`;
         });
         if(wp.length > 0) {
             str += `
