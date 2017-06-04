@@ -244,10 +244,10 @@ class MFPStats {
         stats.estimatedWeight = Math.round(stats.estimatedWeight * 10) / 10;
         stats.dailyAverage = Math.round(stats.dailyAverage * 10) / 10;
         stats.daysLeft = Math.round(stats.daysLeft);
-        stats.bmr = parseFloat(stats.bmr.toFixed(1));
-        stats.sedentaryKcal = parseFloat(stats.sedentaryKcal.toFixed(1));
-        stats.activeKcal = parseFloat(stats.activeKcal.toFixed(1));
-        stats.veryActiveKcal = parseFloat(stats.veryActiveKcal.toFixed(1));
+        stats.bmr = Math.round(stats.bmr);
+        stats.sedentaryKcal = Math.round(stats.sedentaryKcal);
+        stats.activeKcal = Math.round(stats.activeKcal);
+        stats.veryActiveKcal = Math.round(stats.veryActiveKcal);
         stats.bmi = parseFloat(stats.bmi.toFixed(1));
 
         return stats;
