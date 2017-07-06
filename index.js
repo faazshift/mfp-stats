@@ -196,6 +196,7 @@ class MFPStats {
         stats.startWeight = startWeight;
         stats.startBmi = parseFloat(this.statHelper.bmi(height, startWeight).toFixed(1));
         stats.startBmiClass = this.statHelper.bmi_class(stats.startBmi);
+        stats.startBmiRisk = this.statHelper.bmi_risk(stats.startBmi);
         stats.goalWeight = goalWeight;
         stats.daysSinceStart = moment(latestDate).diff(moment(startDate), 'days');
         stats.lastWeight = latestWeight;
@@ -215,6 +216,7 @@ class MFPStats {
         stats.veryActiveKcal = this.statHelper.adjust_bmr(stats.bmr, 1.7);
         stats.bmi = this.statHelper.bmi(height, latestWeight);
         stats.bmiClass = this.statHelper.bmi_class(stats.bmi);
+        stats.bmiRisk = this.statHelper.bmi_risk(stats.bmi);
 
         // Waypoints
         stats.waypoints = [];
@@ -226,6 +228,7 @@ class MFPStats {
                     point.toLose = lw - goalWeight;
                     point.bmi = this.statHelper.bmi(height, lw);
                     point.bmiClass = this.statHelper.bmi_class(point.bmi);
+                    point.bmiRisk = this.statHelper.bmi_risk(point.bmi);
                     point.daysLeft = Math.round(point.toLose / stats.dailyAverage);
                     point.daysUntil = Math.round(stats.daysLeft - point.daysLeft);
                     point.date = moment().add(point.daysUntil, 'days').format();
