@@ -221,7 +221,7 @@ class MFPStats {
         // Waypoints
         stats.waypoints = [];
         if(latestWeight > goalWeight - 10) {
-            for(let lw = Math.round(latestWeight); lw > Math.round(goalWeight); lw--) {
+            for(let lw = Math.floor(latestWeight); lw > Math.round(goalWeight); lw--) {
                 if(lw % 10 == 0) {
                     let point = {};
                     point.weight = lw;
@@ -328,6 +328,15 @@ class MFPStats {
                 res.set('Content-Type', 'text/plain');
                 res.status(200).send(txt).end();
             });
+
+            app.get('/', (req, res) => {
+                let indexLinks = [
+                    '/progress',
+                    '/progress.json'
+                ].map((path) => { return `<div><a href="${path}">${path}</a></div>`; }).join('');
+                let forkLink = `<div>Fork me on <a href="https://github.com/faazshift/mfp-stats">Github</a></div>`;
+                res.status(200).send(`<html><body>${indexLinks}<br/><br/>${forkLink}</body></html>`).end();
+            })
 
             console.log(`Server listening on port ${this.config.express.port}...`)
             app.listen(this.config.express.port);
