@@ -297,9 +297,7 @@ class MFPStats {
             // Start fetch
             let faults = 0;
             let fetchFn = () => {
-                this.fetchData().then(() => {
-                    setTimeout(fetchFn, this.config.fetchInterval * 1000);
-                }).catch((err) => {
+                this.fetchData().catch((err) => {
                     console.error(err);
                     faults = faults + 1;
 
@@ -307,6 +305,8 @@ class MFPStats {
                         console.error('Too many fetch errors! Exiting...');
                         process.exit(1);
                     }
+                }).then(() => {
+                    setTimeout(fetchFn, this.config.fetchInterval * 1000);
                 });
             };
             fetchFn();
