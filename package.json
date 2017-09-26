@@ -1,6 +1,6 @@
 {
   "name": "mfp-stats",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A simple tool to scrape MyFitnessPal and crunch some numbers",
   "main": "index.js",
   "scripts": {
