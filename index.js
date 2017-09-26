@@ -9,10 +9,7 @@ let statmath = require('./lib/stat-math');
 class MFPStats {
     constructor(config = {}) {
         this.config = Object.assign({
-            auth: {
-                username: '',
-                password: ''
-            },
+            profiles: {},
             express: {
                 port: 5678,
             },
@@ -26,18 +23,24 @@ class MFPStats {
         this.mfpURL = `https://www.${this.mfpDomain}`;
         this.mfpAPI = `https://api.${this.mfpDomain}/v2`;
 
-        this.authInfo = {};
-        this.authed = false;
-        this.updated = null;
-
-        this.userData = {};
-        this.latestWeight = {};
+        this.profiles = [];
+        Object.keys(this.config.profiles).forEach((profile) => {
+            this.profiles.push({
+                name: profile,
+                config: this.config.profiles[profile],
+                authInfo: {},
+                authed: false,
+                updated: null,
+                userData: {},
+                latestWeight: {}
+            });
+        });
     }
 
-    auth() {
+    auth(authConfig = {}) {
         let authDetails = Object.assign({
             utf8: '✓',
-        }, this.config.auth);
+        }, authConfig);
 
         return request({
             url: `${this.mfpURL}/`,
@@ -69,10 +72,10 @@ class MFPStats {
                         },
                         resolveWithFullResponse: true
                     }).then((resp) => {
-                        this.authInfo = JSON.parse(resp.body);
-                        this.authed = true;
+                        let authInfo = JSON.parse(resp.body);
+                        let authed = true;
 
-                        return this.authInfo;
+                        return { authInfo, authed };
                     });
                 } else {
                     return Promise.reject('Authentication Failure');
@@ -81,26 +84,26 @@ class MFPStats {
         });
     }
 
-    getAuthHeaders() {
-        if(!this.authed) {
+    getAuthHeaders(profile = {}) {
+        if(!profile.authed) {
             return {};
         } else {
             return {
-                'Authorization': `Bearer ${this.authInfo.access_token}`,
+                'Authorization': `Bearer ${profile.authInfo.access_token}`,
                 'mfp-client-id': 'mfp-main-js',
-                'mfp-user-id': this.authInfo.user_id
+                'mfp-user-id': profile.authInfo.user_id
             };
         }
     }
 
-    getUserData() {
-        if(!this.authed) {
+    getUserData(profile = {}) {
+        if(!profile.authed) {
             return Promise.reject('You must first authenticate');
         } else {
-            let authHeaders = this.getAuthHeaders();
+            let authHeaders = this.getAuthHeaders(profile);
 
             return request({
-                url: `${this.mfpAPI}/users/${this.authInfo.user_id}`,
+                url: `${this.mfpAPI}/users/${profile.authInfo.user_id}`,
                 method: 'GET',
                 qs: {
                     fields: [
@@ -126,18 +129,16 @@ class MFPStats {
                 }, authHeaders),
                 resolveWithFullResponse: true
             }).then((resp) => {
-                this.userData = JSON.parse(resp.body);
-
-                return this.userData;
+                return JSON.parse(resp.body);
             });
         }
     }
 
-    getLatestWeight() {
-        if(!this.authed) {
+    getLatestWeight(profile = {}) {
+        if(!profile.authed) {
             return Promise.reject('You must first authenticate');
         } else {
-            let authHeaders = this.getAuthHeaders();
+            let authHeaders = this.getAuthHeaders(profile);
 
             return request({
                 url: `${this.mfpAPI}/incubator/measurements`,
@@ -153,40 +154,49 @@ class MFPStats {
                 }, authHeaders),
                 resolveWithFullResponse: true
             }).then((resp) => {
-                this.latestWeight = JSON.parse(resp.body);
-
-                return this.latestWeight;
+                return JSON.parse(resp.body);
             });
         }
     }
 
     fetchData() {
-        return this.auth().then(() => {
-            return this.getUserData();
-        }).then(() => {
-            return this.getLatestWeight();
-        }).then(() => {
-            this.updated = moment().format();
+        let promises = [];
 
-            return {
-                userData: this.userData,
-                latestWeight: this.latestWeight
-            }
+        this.profiles.forEach((profile, idx) => {
+            promises.push(
+                this.auth(profile.config).then(({ authInfo, authed }) => {
+                    this.profiles[idx].authInfo = authInfo;
+                    this.profiles[idx].authed = authed;
+
+                    return this.getUserData(profile).then((userData) => {
+                        this.profiles[idx].userData = userData;
+                    });
+                }).then(() => {
+                    return this.getLatestWeight(profile).then((latestWeight) => {
+                        this.profiles[idx].latestWeight = latestWeight;
+                    });
+                }).then(() => {
+                    this.profiles[idx].updated = moment().format();
+                    return this.profiles[idx];
+                })
+            );
         });
+
+        return Promise.all(promises);
     }
 
-    buildStats() {
+    buildStats(profileData = {}) {
         // Collect info
-        let sex = _get(this.userData, 'item.profiles.0.sex').toLowerCase();
-        let height = _get(this.userData, 'item.profiles.0.height.value'); // For now, we'll assume imperial
-        let birthdate = _get(this.userData, 'item.profiles.0.birthdate');
+        let sex = _get(profileData.userData, 'item.profiles.0.sex').toLowerCase();
+        let height = _get(profileData.userData, 'item.profiles.0.height.value'); // For now, we'll assume imperial
+        let birthdate = _get(profileData.userData, 'item.profiles.0.birthdate');
         let age = moment().diff(moment(birthdate), 'years');
 
-        let startDate = _get(this.userData, 'item.profiles.0.starting_weight_date');
-        let startWeight = _get(this.userData, 'item.profiles.0.starting_weight.value'); // Expect lbs for now
-        let goalWeight = _get(this.userData, 'item.goal_preferences.weight_goal.value');
-        let latestDate = _get(this.latestWeight, 'items.0.date');
-        let latestWeight = _get(this.latestWeight, 'items.0.value');
+        let startDate = _get(profileData.userData, 'item.profiles.0.starting_weight_date');
+        let startWeight = _get(profileData.userData, 'item.profiles.0.starting_weight.value'); // Expect lbs for now
+        let goalWeight = _get(profileData.userData, 'item.goal_preferences.weight_goal.value');
+        let latestDate = _get(profileData.latestWeight, 'items.0.date');
+        let latestWeight = _get(profileData.latestWeight, 'items.0.value');
 
         // Build stats
         let stats = {};
@@ -256,10 +266,10 @@ class MFPStats {
         return stats;
     }
 
-    stringifyStats(stats = {}) {
+    stringifyStats(profile = {}, stats = {}) {
         let str = `Weight loss stats
 
-            MFP username: ${(_get(this.userData, 'item.username'))}
+            MFP username: ${(_get(profile.userData, 'item.username'))}
             Starting weight: ${stats.startWeight} lbs (${stats.startBmi} bmi / ${stats.startBmiClass})
             Starting date: ${stats.displayStartDate} (${stats.daysSinceStart} days ago)
             Lost so far: ${stats.lost} lbs (most recently at ${stats.lastWeight} lbs) (${stats.bmi} bmi / ${stats.bmiClass})
@@ -286,25 +296,43 @@ class MFPStats {
         return str.replace(/^ */gm, '');
     }
 
+    buildAllStats() {
+        let stats = {};
+
+        this.profiles.forEach((profile) => {
+            stats[profile.name] = this.buildStats(profile);
+        });
+
+        return stats;
+    }
+
+    handleRequest(profileIdx, req, res) {
+        let stats = this.buildStats(this.profiles[profileIdx]);
+        let txt = this.stringifyStats(this.profiles[profileIdx], stats);
+        res.set('Content-Type', 'text/plain');
+        res.status(200).send(txt).end();
+    }
+
+    handleRequestJson(profileIdx, req, res) {
+        let stats = this.buildStats(this.profiles[profileIdx]);
+        res.status(200).json({
+            stats,
+            updated: this.profiles[profileIdx].updated
+        }).end();
+    }
+
     run() {
         if(this.config.mode == 'cli') {
             this.fetchData().then(() => {
-                console.log(JSON.stringify(this.buildStats(), null, 2));
+                console.log(JSON.stringify(this.buildAllStats(), null, 2));
             }).catch((err) => {
                 console.error(err);
             });
         } else if(this.config.mode == 'server') {
             // Start fetch
-            let faults = 0;
             let fetchFn = () => {
                 this.fetchData().catch((err) => {
                     console.error(err);
-                    faults = faults + 1;
-
-                    if(faults > 10) {
-                        console.error('Too many fetch errors! Exiting...');
-                        process.exit(1);
-                    }
                 }).then(() => {
                     setTimeout(fetchFn, this.config.fetchInterval * 1000);
                 });
@@ -314,28 +342,17 @@ class MFPStats {
             // Route requests
             let app = express();
 
-            app.get('/progress.json', (req, res) => {
-                let stats = this.buildStats();
-                res.status(200).json({
-                    stats,
-                    updated: this.updated
-                }).end();
-            });
-
-            app.get('/progress', (req, res) => {
-                let stats = this.buildStats();
-                let txt = this.stringifyStats(stats);
-                res.set('Content-Type', 'text/plain');
-                res.status(200).send(txt).end();
+            this.profiles.forEach((profile, idx) => {
+                app.get(`/${profile.name}`, this.handleRequest.bind(this, idx));
+                app.get(`/${profile.name}.json`, this.handleRequestJson.bind(this, idx));
             });
 
             app.get('/', (req, res) => {
-                let indexLinks = [
-                    '/progress',
-                    '/progress.json'
-                ].map((path) => { return `<div><a href="${path}">${path}</a></div>`; }).join('');
+                let profileLinks = this.profiles.map((profile) => {
+                    return `<div>${profile.name}: <a href="/${profile.name}">text</a> | <a href="/${profile.name}.json">json</a></div>`;
+                }).join('');
                 let forkLink = `<div>Fork me on <a href="https://github.com/faazshift/mfp-stats">Github</a></div>`;
-                res.status(200).send(`<html><body>${indexLinks}<br/><br/>${forkLink}</body></html>`).end();
+                res.status(200).send(`<html><body>Profiles:<div>-----</div>${profileLinks}<div>-----</div><br/><br/>${forkLink}</body></html>`).end();
             })
 
             console.log(`Server listening on port ${this.config.express.port}...`)
@@ -353,6 +370,7 @@ if (require.main === module) {
         config = require('./config.json');
     } catch(e) {
         console.error('Config missing or invalid.');
+        console.error(e);
         process.exit(1);
     }
 

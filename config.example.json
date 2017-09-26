@@ -1,7 +1,13 @@
 {
-    "auth": {
-        "username": "",
-        "password": ""
+    "profiles" : {
+        "profile1": {
+            "username": "",
+            "password": ""
+        },
+        "profile2": {
+            "username": "",
+            "password": ""
+        }
     },
     "express": {
         "port": 5678
