@@ -9,6 +9,9 @@
             "password": ""
         }
     },
+    "features": {
+        "exposeImages": false
+    },
     "express": {
         "port": 5678
     },

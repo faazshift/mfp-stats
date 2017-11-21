@@ -13,6 +13,9 @@ class MFPStats {
             express: {
                 port: 5678,
             },
+            features: {
+                exposeImages: false
+            },
             fetchInterval: 6 * 60 * 60, // 6 hours
             mode: 'cli' // `cli` or `server`
         }, config);
@@ -32,7 +35,8 @@ class MFPStats {
                 authed: false,
                 updated: null,
                 userData: {},
-                latestWeight: {}
+                latestWeight: {},
+                measurements: []
             });
         });
     }
@@ -159,6 +163,91 @@ class MFPStats {
         }
     }
 
+    getMeasurements(profile = {}, options = { images: false, imageUrls: false }) {
+        if(!profile.authed) {
+            return Promise.reject('You must first authenticate');
+        } else {
+            let authHeaders = this.getAuthHeaders(profile);
+            let commonOpts = {
+                method: 'GET',
+                jar: true,
+                headers: Object.assign({
+                    Accept: 'application/json',
+                    'User-Agent': 'Mozilla/5.0'
+                }, authHeaders),
+                resolveWithFullResponse: true
+            };
+
+            let promises = [
+                request(Object.assign({
+                    url: `${this.mfpAPI}/measurements`
+                }, commonOpts)).then((resp) => { return JSON.parse(resp.body) })
+            ];
+
+            if(options.images) {
+                promises.push(
+                    request(Object.assign({
+                        url: `${this.mfpAPI}/image-associations`
+                    }, commonOpts)).then((resp) => { return JSON.parse(resp.body) })
+                );
+                promises.push(
+                    request(Object.assign({
+                        url: `${this.mfpAPI}/images`
+                    }, commonOpts)).then((resp) => { return JSON.parse(resp.body) })
+                );
+            }
+
+            return Promise.all(promises).then(([measurements, imageAssoc, images]) => {
+                measurements = _get(measurements, 'items', []).sort((a, b) => {
+                    if(!('date' in a) || !('date' in b) || a.date == b.date) {
+                        return 0;
+                    }
+                    return a.date > b.date ? 1 : -1;
+                });
+
+                if(options.images) {
+                    imageAssoc = _get(imageAssoc, 'items', []).reduce((accum, obj) => {
+                        accum[obj.resource_id] = obj;
+                        return accum;
+                    }, {});
+                    images = _get(images, 'items', []).reduce((accum, obj) => {
+                        accum[obj.id] = obj;
+                        return accum;
+                    }, {});
+
+                    measurements.forEach((m, idx) => {
+                        if(m.id in imageAssoc) {
+                            measurements[idx].imageAssoc = imageAssoc[m.id];
+                            if(measurements[idx].imageAssoc.image_id in images) {
+                                measurements[idx].image = images[measurements[idx].imageAssoc.image_id];
+                            }
+                        }
+                    });
+                }
+
+                return options.images && options.imageUrls ? new Promise((resolve, reject) => {
+                    return measurements.reduce((accum, cur, idx) => {
+                        return accum.then(() => {
+                            if('image' in cur) {
+                                let imageLink = `${this.mfpAPI}/images/${cur.image.id}/download`;
+                                return request(Object.assign({
+                                    url: imageLink,
+                                    followAllRedirects: true
+                                }, commonOpts)).then((resp) => {
+                                    measurements[idx].imageUrl = _get(resp, 'request.uri.href', null);
+                                });
+                            }
+                        });
+                    }, Promise.resolve()).then(() => {
+                        resolve(measurements);
+                    }).catch((err) => {
+                        reject(err);
+                    });
+                }) : Promise.resolve(measurements);
+            });
+        }
+    }
+
     fetchData() {
         let promises = [];
 
@@ -174,6 +263,11 @@ class MFPStats {
                 }).then(() => {
                     return this.getLatestWeight(profile).then((latestWeight) => {
                         this.profiles[idx].latestWeight = latestWeight;
+                    });
+                }).then(() => {
+                    let opts = this.config.features.exposeImages ? { images: true, imageUrls: true } : undefined;
+                    return this.getMeasurements(profile, opts).then((measurements) => {
+                        this.profiles[idx].measurements = measurements;
                     });
                 }).then(() => {
                     this.profiles[idx].updated = moment().format();
@@ -250,6 +344,15 @@ class MFPStats {
                 }
             }
         }
+
+        // Measurement history
+        stats.measurements = _get(profileData, 'measurements', []).map(({date, unit, type, value, imageUrl}) => {
+            let m = {date, unit, type, value};
+            if(imageUrl) {
+                m.imageUrl = imageUrl;
+            }
+            return m;
+        });
 
         // Prettification
         stats.lost = Math.round(stats.lost * 10) / 10;
