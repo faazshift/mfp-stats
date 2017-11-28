@@ -180,7 +180,10 @@ class MFPStats {
 
             let promises = [
                 request(Object.assign({
-                    url: `${this.mfpAPI}/measurements`
+                    url: `${this.mfpAPI}/measurements`,
+                    qs: {
+                        type: 'weight'
+                    }
                 }, commonOpts)).then((resp) => { return JSON.parse(resp.body) })
             ];
 
@@ -279,6 +282,20 @@ class MFPStats {
         return Promise.all(promises);
     }
 
+    weightTrend(measurements = []) {
+        let since = moment().subtract(1, 'month');
+        let included = [];
+        measurements.slice().reverse().forEach((m) => {
+            if (moment(m.date).isAfter(since) || included.length < 5) {
+                included.push({
+                    x: moment(m.date).diff(since, 'days'),
+                    y: m.value
+                });
+            }
+        });
+        return this.statHelper.trend(included.reverse());
+    }
+
     buildStats(profileData = {}) {
         // Collect info
         let sex = _get(profileData.userData, 'item.profiles.0.sex').toLowerCase();
@@ -307,13 +324,25 @@ class MFPStats {
         stats.lost = parseFloat(startWeight) - parseFloat(latestWeight);
         stats.toLose = parseFloat(latestWeight) - parseFloat(goalWeight);
         stats.lostPercent = Math.round(((stats.lost / (startWeight - goalWeight)) * 100) * 10) / 10;
-        stats.dailyAverage = stats.lost / stats.daysSinceStart;
-        stats.daysLeft = stats.toLose / stats.dailyAverage;
-        stats.goalDate = moment().add(stats.daysLeft, 'days').format();
-        stats.displayGoalDate = moment(stats.goalDate).format('dddd, MMMM D, YYYY');
-        stats.goalDuration = moment.duration(stats.daysLeft, 'days').humanize();
         stats.daysSinceLastWeight = moment().diff(moment(latestDate), 'days');
-        stats.estimatedWeight = latestWeight - (stats.dailyAverage * stats.daysSinceLastWeight);
+        stats.trendingAverage = profileData.measurements.length > 0 ? this.weightTrend(profileData.measurements) : null;
+        stats.trend = typeof stats.trendingAverage != 'number' ? 'unknown' : (stats.trendingAverage == 0 ? 'stagnate' : (stats.trendingAverage > 0 ? 'gaining' : 'losing'));
+        if(stats.trend == 'losing') {
+            stats.daysLeft = stats.toLose / -stats.trendingAverage;
+            stats.goalDate = moment().add(stats.daysLeft, 'days').format();
+            stats.displayGoalDate = moment(stats.goalDate).format('dddd, MMMM D, YYYY');
+            stats.goalDuration = moment.duration(stats.daysLeft, 'days').humanize();
+        } else {
+            stats.daysLeft = 'unknown';
+            stats.goalDate = 'unknown';
+            stats.displayGoalDate = 'unknown';
+            stats.goalDuration = 'unknown';
+        }
+        if(stats.trend != 'unknown') {
+            stats.estimatedWeight = latestWeight - (-stats.trendingAverage * stats.daysSinceLastWeight);
+        } else {
+            stats.estimatedWeight = latestWeight;
+        }
         stats.bmr = this.statHelper.bmr_mifflin_st_jeor(sex, latestWeight, height, age);
         stats.sedentaryKcal = this.statHelper.adjust_bmr(stats.bmr, 1.3);
         stats.activeKcal = this.statHelper.adjust_bmr(stats.bmr, 1.5);
@@ -333,10 +362,17 @@ class MFPStats {
                     point.bmi = this.statHelper.bmi(height, lw);
                     point.bmiClass = this.statHelper.bmi_class(point.bmi);
                     point.bmiRisk = this.statHelper.bmi_risk(point.bmi);
-                    point.daysLeft = Math.round(point.toLose / stats.dailyAverage);
-                    point.daysUntil = Math.round(stats.daysLeft - point.daysLeft);
-                    point.date = moment().add(point.daysUntil, 'days').format();
-                    point.displayDate = moment(point.date).format('dddd, MMMM D, YYYY');
+                    if(stats.trend == 'losing') {
+                        point.daysLeft = Math.round(point.toLose / -stats.trendingAverage);
+                        point.daysUntil = Math.round(stats.daysLeft - point.daysLeft);
+                        point.date = moment().add(point.daysUntil, 'days').format();
+                        point.displayDate = moment(point.date).format('dddd, MMMM D, YYYY');
+                    } else {
+                        point.daysLeft = 'unknown';
+                        point.daysUntil = 'unknown';
+                        point.date = 'unknown';
+                        point.displayDate = 'unknown';
+                    }
 
                     point.bmi = point.bmi.toFixed(1);
 
@@ -358,8 +394,8 @@ class MFPStats {
         stats.lost = Math.round(stats.lost * 10) / 10;
         stats.toLose = Math.round(stats.toLose * 10) / 10;
         stats.estimatedWeight = Math.round(stats.estimatedWeight * 10) / 10;
-        stats.dailyAverage = Math.round(stats.dailyAverage * 10) / 10;
-        stats.daysLeft = Math.round(stats.daysLeft);
+        stats.trendingAverage = typeof stats.trendingAverage == 'number' ? Math.round(stats.trendingAverage * 1000) / 1000 : stats.trendingAverage;
+        stats.daysLeft = typeof stats.daysLeft == 'number' ? Math.round(stats.daysLeft) : stats.daysLeft;
         stats.bmr = Math.round(stats.bmr);
         stats.sedentaryKcal = Math.round(stats.sedentaryKcal);
         stats.activeKcal = Math.round(stats.activeKcal);
@@ -379,7 +415,7 @@ class MFPStats {
             Estimated current weight: ${stats.estimatedWeight} lbs (${stats.daysSinceLastWeight} days since last weigh-in)
             Metabolic rate: ${stats.bmr}
             Caloric needs for maintenance: sedentary - ${stats.sedentaryKcal}; active - ${stats.activeKcal}; very active - ${stats.veryActiveKcal}
-            Average daily loss: ${stats.dailyAverage} lbs
+            Daily trend: ${stats.trendingAverage} lbs
             Goal weight: ${stats.goalWeight} lbs
             Progress: ${stats.lostPercent}%
             Estimated success date: ${stats.displayGoalDate} (${stats.daysLeft} days remaining)`;
